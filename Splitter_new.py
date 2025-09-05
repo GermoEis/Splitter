@@ -13,23 +13,25 @@ import easyocr
 from datetime import datetime
 import shutil
 import requests
+import webbrowser
 
 # ------------------------------------------------------------------
-# APP VERSION & GITHUB INFO
+# VERSIOON
 # ------------------------------------------------------------------
-__version__ = "1.0.0"  # praegune rakenduse versioon
-GITHUB_VERSION_JSON = "https://raw.githubusercontent.com/kasutajanimi/repo/main/version.json"  # muuda oma repo URL
-LOCAL_VERSION_FILE = os.path.join(os.path.expanduser("~"), ".pdfsplitter_last_version.json")
+__version__ = "1.0.0"
+GITHUB_VERSION_JSON = "https://raw.githubusercontent.com/GermoEis/Splitter/main/version.json"
 
 # ------------------------------------------------------------------
 # CONFIG FILE
 # ------------------------------------------------------------------
 CONFIG_FILE = r"Z:/share/Ocr_Splittija/config.json"  # fikseeritud tee
 
-# --- EasyOCR engine (vene keel vaikimisi; lisa vajadusel keeli) ---
-ocr_engine = easyocr.Reader(["ru"], gpu=True)
+try:
+    ocr_engine = easyocr.Reader(["ru"], gpu=True)
+except Exception:
+    ocr_engine = easyocr.Reader(["ru"], gpu=False)
 
-# --- Config load/save ---
+
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
@@ -56,7 +58,7 @@ def save_config(cfg):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
 
-# --- OCR helpers ---
+# --- OCR helperid ---
 def ocr_header(image, header_ratio=0.15):
     h = image.shape[0]
     crop_h = max(1, int(h * header_ratio))
@@ -84,7 +86,6 @@ def extract_text_with_ocr(page):
         text = ""
     return text
 
-# --- PDF split logic ---
 def check_include(text, inc_list, all_must_match):
     if not inc_list:
         return False
@@ -183,24 +184,26 @@ def split_pdfs(pdf_paths, conds_dict, output_dir, progress_callback=None):
         all_results[os.path.basename(pdf_path)] = results
     return all_results
 
-# --- Tkinter App ---
+# ------------------------------------------------------------------
+# PDF Splitter App
+# ------------------------------------------------------------------
 class PDFSplitterApp:
     def __init__(self, root):
         self.root = root
         root.title("PDF Splitter (EasyOCR)")
         root.geometry("1200x750")
 
-        # Laadi konfiguratsioon
+        # laadi konfiguratsioon
         self.config = load_config()
         self.jobs = self.config.get("jobs_conditions", {})
 
-        # PDF & preview
+        # pdf & preview
         self.pdf_list = []
         self.current_pdf_index = 0
         self.preview_images = []
         self.current_preview_index = 0
 
-        # Väljundkaustad
+        # väljundkaustad
         self.output_dir = None
         self.processed_dir = None
 
@@ -213,15 +216,12 @@ class PDFSplitterApp:
         tk.Button(top_frame, text="Vali PDF(id)", command=self.load_pdfs).pack(side=tk.LEFT, padx=4)
         self.label_output = tk.Label(top_frame, text=f"Väljundkaust: {self.output_dir or '[pole määratud]'}")
         self.label_output.pack(side=tk.LEFT, padx=12)
-        # --- Versiooni label ---
-        self.version_label = tk.Label(top_frame, text=f"Versioon: {__version__}")
-        self.version_label.pack(side=tk.RIGHT, padx=6)
 
-        # --- Paned layout (resizable) ---
+        # --- Pane layout ---
         main_pane = ttk.Panedwindow(root, orient=tk.HORIZONTAL)
         main_pane.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
 
-        # Vasak: job tree
+        # vasak: job tree
         self.tree_frame = tk.Frame(main_pane, bd=2, relief=tk.GROOVE)
         tk.Label(self.tree_frame, text="Jobs Hierarchy").pack(anchor="w", padx=6, pady=(6, 0))
         self.tree = ttk.Treeview(self.tree_frame)
@@ -234,7 +234,7 @@ class PDFSplitterApp:
         tk.Button(tree_btn_frame, text="Edit", command=self.edit_tree_item).pack(side=tk.LEFT, padx=4)
         tk.Button(tree_btn_frame, text="Del", command=self.delete_tree_item).pack(side=tk.LEFT, padx=4)
 
-        # Parem: details + preview
+        # parem: details + preview
         self.detail_frame = tk.Frame(main_pane, bd=2, relief=tk.GROOVE)
         conds_top = tk.Frame(self.detail_frame)
         conds_top.pack(fill=tk.X, padx=6, pady=6)
@@ -263,7 +263,6 @@ class PDFSplitterApp:
         tk.Button(btn_exc, text="Edit", command=lambda: self.edit_condition("exclude")).pack(side=tk.LEFT, padx=4)
         tk.Button(btn_exc, text="Del", command=lambda: self.del_condition("exclude")).pack(side=tk.LEFT, padx=4)
 
-        # all-must-match
         self.all_match_var = tk.BooleanVar(value=False)
         self.chk_all_match = tk.Checkbutton(self.detail_frame, text="Kõik include sõnad peavad klappima", variable=self.all_match_var, command=self.toggle_all_must_match)
         self.chk_all_match.pack(anchor="w", padx=8, pady=(0, 6))
@@ -282,21 +281,43 @@ class PDFSplitterApp:
         self.page_label = tk.Label(nav_frame, text="Leht: 0/0")
         self.page_label.pack(side=tk.LEFT, padx=8)
 
-        # pane lisamine
         main_pane.add(self.tree_frame, weight=1)
         main_pane.add(self.detail_frame, weight=3)
 
-        # täida puu konfiguratsioonist
         self.refresh_tree()
 
-        # Käivita update check thread'is
-        threading.Thread(target=self.check_for_update, daemon=True).start()
+        # Versioon label all paremal
+        self.version_label = tk.Label(root, text=f"Versioon: {__version__}")
+        self.version_label.pack(anchor="se", side=tk.BOTTOM, padx=6, pady=4)
+
+        # Kontrolli uuendusi taustal
+        threading.Thread(target=self.check_for_update_background, daemon=True).start()
+
+    # ---------------- Versioon & Uuendus ----------------
+    def check_for_update_background(self):
+        try:
+            r = requests.get(GITHUB_VERSION_JSON, timeout=5)
+            if r.status_code == 200:
+                data = r.json()
+                latest_version = data.get("latest_version")
+                download_url = data.get("download_url")
+                if latest_version and self.version_compare(latest_version, __version__):
+                    self.root.after(0, self.prompt_update, latest_version, download_url)
+        except Exception:
+            pass
+
+    def version_compare(self, latest, current):
+        """True, kui uus versioon olemas"""
+        def parse(v):
+            return [int(x) for x in v.split(".")]
+        return parse(latest) > parse(current)
 
     # ---------------- Jobs / Conditions ----------------
     def refresh_tree(self):
         self.tree.delete(*self.tree.get_children())
         for mainjob, subs in self.jobs.items():
             parent = self.tree.insert("", "end", text=mainjob, open=True)
+            # subs on dict (subjob -> conds) — iteratsioon annab subjob nimed
             for subjob in subs.keys():
                 self.tree.insert(parent, "end", text=subjob)
 
@@ -527,7 +548,7 @@ class PDFSplitterApp:
             self.output_dir = dir_path
             self.label_output.config(text=f"Väljundkaust: {dir_path}")
 
-    def set_processed_dir(self):  # <-- uus funktsioon
+    def set_processed_dir(self):
         dir_path = filedialog.askdirectory(title="Processed kaust (kuhu algsed failid tõstetakse)")
         if dir_path:
             self.processed_dir = dir_path
@@ -625,25 +646,6 @@ class PDFSplitterApp:
                 messagebox.showinfo("Done", f"Main Job '{mainjob}' splititud.\n\n{msg}\n\nLogifailid: {out_dir}")
             else:
                 messagebox.showwarning("Tulemus", "Ühtegi faili ei loodud (pole ühtegi matching rule'i või lehti).")
-
-    # ------------------- Update check -------------------
-    def check_for_update(self):
-        try:
-            resp = requests.get(GITHUB_VERSION_JSON, timeout=5)
-            if resp.status_code == 200:
-                data = resp.json()
-                latest = data.get("latest_version")
-                notes = data.get("release_notes", "")
-                if latest != __version__:
-                    messagebox.showinfo(
-                        "Uuendus saadaval",
-                        f"Saadaval on versioon {latest} (praegu {__version__})\n\n{notes}"
-                    )
-                with open(LOCAL_VERSION_FILE, "w", encoding="utf-8") as f:
-                    json.dump({"last_used_version": __version__}, f)
-        except Exception as e:
-            print(f"Uuenduse kontroll ebaõnnestus: {e}")
-
 
 if __name__ == "__main__":
     root = tk.Tk()

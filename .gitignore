@@ -1,0 +1,17 @@
+# Python cache ja temp failid
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Tkinter/Tk temp failid
+*.log
+*.db
+
+# OS failid
+.DS_Store
+Thumbs.db
+
+# PDF väljundid ja processed kaust
+output/
+processed/
