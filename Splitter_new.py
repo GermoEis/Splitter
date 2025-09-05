@@ -205,7 +205,7 @@ class ModernPDFSplitter:
 
         self.setup_ui()
         self.refresh_tree()
-        threading.Thread(target=self.check_for_update_background, daemon=True).start()
+  #      threading.Thread(target=self.check_for_update_background, daemon=True).start()
 
     def setup_ui(self):
         style = ttk.Style(self.root)
