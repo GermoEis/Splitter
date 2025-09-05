@@ -676,7 +676,6 @@ class ModernPDFSplitter:
                 except Exception:
                     pass
 
-        threading.Thread(target=threaded_split, daemon=True).start()
 
     def _finish_split(self, mainjob, results, out_dir):
             try:
