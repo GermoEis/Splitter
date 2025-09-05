@@ -304,12 +304,46 @@ class PDFSplitterApp:
             r = requests.get(GITHUB_VERSION_JSON, timeout=5)
             if r.status_code == 200:
                 data = r.json()
-                latest_version = data.get("latest_version")
+                latest_version = data.get("version")
                 download_url = data.get("download_url")
                 if latest_version and self.version_compare(latest_version, __version__):
                     self.root.after(0, self.prompt_update, latest_version, download_url)
         except Exception:
             pass
+
+    def prompt_update(self, latest_version, download_url):
+        if messagebox.askyesno(
+            "Uus versioon saadaval",
+            f"Saadaval on uus versioon {latest_version}.\nAvada brauser allalaadimiseks?"
+        ):
+            webbrowser.open(download_url)
+
+    def download_and_replace(self, download_url):
+        try:
+            r = requests.get(download_url, timeout=10)
+            if r.status_code == 200:
+                script_path = os.path.realpath(sys.argv[0])
+                backup_path = script_path + ".bak"
+                shutil.copyfile(script_path, backup_path)
+                with open(script_path, "wb") as f:
+                    f.write(r.content)
+                
+                # uuenda jooksvalt versiooni UI-s
+                data = requests.get(GITHUB_VERSION_JSON).json()
+                new_version = data.get("version", "0.0.0")
+                global __version__
+                __version__ = new_version
+                self.version_label.config(text=f"Versioon: {__version__}")
+                
+                messagebox.showinfo(
+                    "Uuendus tehtud",
+                    f"Uuendus on allalaaditud ja backup tehtud: {backup_path}\nTaaskäivita rakendus."
+                )
+            else:
+                messagebox.showerror("Viga", f"Ei saanud uuendust alla laadida: HTTP {r.status_code}")
+        except Exception as e:
+            messagebox.showerror("Viga", f"Uuenduse allalaadimine ebaõnnestus: {e}")
+
 
     def version_compare(self, latest, current):
         """True, kui uus versioon olemas"""
