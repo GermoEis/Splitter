@@ -25,6 +25,7 @@ except Exception:
     __version__ = "0.0.0"
 
 GITHUB_VERSION_JSON = "https://raw.githubusercontent.com/GermoEis/Splitter/main/version.json"
+SCRIPT_RAW_URL = "https://raw.githubusercontent.com/GermoEis/Splitter/main/Splitter.py"
 
 # ------------------------------------------------------------------
 # CONFIG FILE
@@ -311,36 +312,35 @@ class PDFSplitterApp:
         except Exception:
             pass
 
-    def prompt_update(self, latest_version, download_url):
+    def prompt_update(self, latest_version, download_url=None):
         if messagebox.askyesno(
             "Uus versioon saadaval",
-            f"Saadaval on uus versioon {latest_version}.\nAvada brauser allalaadimiseks?"
+            f"Saadaval on uus versioon {latest_version}.\nUuendada jooksvalt rakenduse skript?"
         ):
-            webbrowser.open(download_url)
+            self.download_and_replace(SCRIPT_RAW_URL)
+
 
     def download_and_replace(self, download_url):
         try:
             r = requests.get(download_url, timeout=10)
-            if r.status_code == 200:
-                script_path = os.path.realpath(sys.argv[0])
-                backup_path = script_path + ".bak"
-                shutil.copyfile(script_path, backup_path)
-                with open(script_path, "wb") as f:
-                    f.write(r.content)
-                
-                # uuenda jooksvalt versiooni UI-s
-                data = requests.get(GITHUB_VERSION_JSON).json()
-                new_version = data.get("version", "0.0.0")
-                global __version__
-                __version__ = new_version
-                self.version_label.config(text=f"Versioon: {__version__}")
-                
-                messagebox.showinfo(
-                    "Uuendus tehtud",
-                    f"Uuendus on allalaaditud ja backup tehtud: {backup_path}\nTaaskäivita rakendus."
-                )
-            else:
-                messagebox.showerror("Viga", f"Ei saanud uuendust alla laadida: HTTP {r.status_code}")
+            r.raise_for_status()
+            script_path = os.path.realpath(sys.argv[0])
+            backup_path = script_path + ".bak"
+            shutil.copyfile(script_path, backup_path)
+            with open(script_path, "wb") as f:
+                f.write(r.content)
+            
+            # uuenda jooksvalt versiooni UI-s
+            data = requests.get(GITHUB_VERSION_JSON, timeout=5).json()
+            new_version = data.get("version", "0.0.0")
+            global __version__
+            __version__ = new_version
+            self.version_label.config(text=f"Versioon: {__version__}")
+            
+            messagebox.showinfo(
+                "Uuendus tehtud",
+                f"Rakendus on uuendatud.\nBackup tehtud: {backup_path}\nTaaskäivita rakendus."
+            )
         except Exception as e:
             messagebox.showerror("Viga", f"Uuenduse allalaadimine ebaõnnestus: {e}")
 
