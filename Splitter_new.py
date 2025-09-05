@@ -15,10 +15,15 @@ import shutil
 import requests
 import webbrowser
 
-# ------------------------------------------------------------------
-# VERSIOON
-# ------------------------------------------------------------------
-__version__ = "1.0.0"
+
+# Loe versioon välisest failist
+VERSION_FILE = "version.json"
+try:
+    with open(VERSION_FILE, "r", encoding="utf-8") as f:
+        __version__ = json.load(f).get("version", "0.0.0")
+except Exception:
+    __version__ = "0.0.0"
+
 GITHUB_VERSION_JSON = "https://raw.githubusercontent.com/GermoEis/Splitter/main/version.json"
 
 # ------------------------------------------------------------------
