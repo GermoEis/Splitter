@@ -25,7 +25,6 @@ except Exception:
     __version__ = "0.0.0"
 
 GITHUB_VERSION_JSON = "https://raw.githubusercontent.com/GermoEis/Splitter/main/version.json"
-SCRIPT_RAW_URL = "https://raw.githubusercontent.com/GermoEis/Splitter/main/Splitter.py"
 
 # ------------------------------------------------------------------
 # CONFIG FILE
@@ -306,18 +305,22 @@ class PDFSplitterApp:
             if r.status_code == 200:
                 data = r.json()
                 latest_version = data.get("version")
-                download_url = data.get("download_url")
+                download_url = data.get("download_url")  
                 if latest_version and self.version_compare(latest_version, __version__):
                     self.root.after(0, self.prompt_update, latest_version, download_url)
         except Exception:
             pass
 
     def prompt_update(self, latest_version, download_url=None):
+        if download_url is None:
+            messagebox.showwarning("Uuendus", "Download URL puudub version.json failist.")
+            return
+
         if messagebox.askyesno(
             "Uus versioon saadaval",
             f"Saadaval on uus versioon {latest_version}.\nUuendada jooksvalt rakenduse skript?"
         ):
-            self.download_and_replace(SCRIPT_RAW_URL)
+            self.download_and_replace(download_url)
 
 
     def download_and_replace(self, download_url):
