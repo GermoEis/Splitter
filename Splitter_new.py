@@ -13,10 +13,8 @@ import easyocr
 from datetime import datetime
 import shutil
 import requests
-import webbrowser
 
-
-# Loe versioon välisest failist
+# ---------------------------- VERSION ----------------------------
 VERSION_FILE = "version.json"
 try:
     with open(VERSION_FILE, "r", encoding="utf-8") as f:
@@ -26,16 +24,13 @@ except Exception:
 
 GITHUB_VERSION_JSON = "https://raw.githubusercontent.com/GermoEis/Splitter/main/version.json"
 
-# ------------------------------------------------------------------
-# CONFIG FILE
-# ------------------------------------------------------------------
-CONFIG_FILE = r"Z:/share/Ocr_Splittija/config.json"  # fikseeritud tee
+# ---------------------------- CONFIG ----------------------------
+CONFIG_FILE = r"Z:/share/Ocr_Splittija/config.json"
 
 try:
     ocr_engine = easyocr.Reader(["ru"], gpu=True)
 except Exception:
     ocr_engine = easyocr.Reader(["ru"], gpu=False)
-
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -63,7 +58,7 @@ def save_config(cfg):
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
 
-# --- OCR helperid ---
+# ---------------------------- OCR ----------------------------
 def ocr_header(image, header_ratio=0.15):
     h = image.shape[0]
     crop_h = max(1, int(h * header_ratio))
@@ -189,114 +184,120 @@ def split_pdfs(pdf_paths, conds_dict, output_dir, progress_callback=None):
         all_results[os.path.basename(pdf_path)] = results
     return all_results
 
-# ------------------------------------------------------------------
-# PDF Splitter App
-# ------------------------------------------------------------------
-class PDFSplitterApp:
+# ---------------------------- MODERN UI ----------------------------
+class ModernPDFSplitter:
     def __init__(self, root):
         self.root = root
-        root.title("PDF Splitter (EasyOCR)")
-        root.geometry("1200x750")
+        root.title("🗂 Modern PDF Splitter (EasyOCR)")
+        root.geometry("1300x850")
+        root.configure(bg="#f7f9fc")
 
-        # laadi konfiguratsioon
         self.config = load_config()
         self.jobs = self.config.get("jobs_conditions", {})
 
-        # pdf & preview
         self.pdf_list = []
         self.current_pdf_index = 0
         self.preview_images = []
         self.current_preview_index = 0
 
-        # väljundkaustad
         self.output_dir = None
         self.processed_dir = None
 
-        # --- Top bar ---
-        top_frame = tk.Frame(root)
-        top_frame.pack(fill=tk.X, padx=6, pady=6)
-        tk.Button(top_frame, text="Set Poppler Path (valikuline)", command=self.set_poppler_path).pack(side=tk.LEFT, padx=4)
-        tk.Button(top_frame, text="Vali väljundkaust", command=self.set_output_dir).pack(side=tk.LEFT, padx=4)
-        tk.Button(top_frame, text="Vali PROCESSED kaust", command=self.set_processed_dir).pack(side=tk.LEFT, padx=4)
-        tk.Button(top_frame, text="Vali PDF(id)", command=self.load_pdfs).pack(side=tk.LEFT, padx=4)
-        self.label_output = tk.Label(top_frame, text=f"Väljundkaust: {self.output_dir or '[pole määratud]'}")
+        self.setup_ui()
+        self.refresh_tree()
+        threading.Thread(target=self.check_for_update_background, daemon=True).start()
+
+    def setup_ui(self):
+        style = ttk.Style(self.root)
+        style.theme_use('clam')
+        style.configure("Treeview", background="#ffffff", fieldbackground="#ffffff", rowheight=25)
+        style.configure("TButton", font=("Arial", 10), padding=6)
+
+        # Top Frame
+        top_frame = tk.Frame(self.root, bg="#f7f9fc")
+        top_frame.pack(fill=tk.X, padx=10, pady=10)
+        btn_bg = "#4a90e2"
+        btn_fg = "white"
+        tk.Button(top_frame, text="Set Poppler Path", bg=btn_bg, fg=btn_fg, relief=tk.FLAT, command=self.set_poppler_path).pack(side=tk.LEFT, padx=4)
+        tk.Button(top_frame, text="Set Output Folder", bg=btn_bg, fg=btn_fg, relief=tk.FLAT, command=self.set_output_dir).pack(side=tk.LEFT, padx=4)
+        tk.Button(top_frame, text="Set Processed Folder", bg=btn_bg, fg=btn_fg, relief=tk.FLAT, command=self.set_processed_dir).pack(side=tk.LEFT, padx=4)
+        tk.Button(top_frame, text="Load PDF(s)", bg=btn_bg, fg=btn_fg, relief=tk.FLAT, command=self.load_pdfs).pack(side=tk.LEFT, padx=4)
+        self.label_output = tk.Label(top_frame, text="Output folder: [not set]", bg="#f7f9fc")
         self.label_output.pack(side=tk.LEFT, padx=12)
 
-        # --- Pane layout ---
-        main_pane = ttk.Panedwindow(root, orient=tk.HORIZONTAL)
-        main_pane.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
+        # Main PanedWindow
+        main_pane = ttk.Panedwindow(self.root, orient=tk.HORIZONTAL)
+        main_pane.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # vasak: job tree
-        self.tree_frame = tk.Frame(main_pane, bd=2, relief=tk.GROOVE)
-        tk.Label(self.tree_frame, text="Jobs Hierarchy").pack(anchor="w", padx=6, pady=(6, 0))
+        # Left: Jobs Tree
+        self.tree_frame = tk.Frame(main_pane, bd=2, relief=tk.GROOVE, bg="white")
+        tk.Label(self.tree_frame, text="Jobs Hierarchy", bg="white", font=("Arial", 12, "bold")).pack(anchor="w", padx=6, pady=6)
         self.tree = ttk.Treeview(self.tree_frame)
         self.tree.pack(fill=tk.BOTH, expand=True, padx=6, pady=6)
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
-        tree_btn_frame = tk.Frame(self.tree_frame)
-        tree_btn_frame.pack(fill=tk.X, padx=6, pady=(0, 6))
-        tk.Button(tree_btn_frame, text="Add Main Job", command=self.add_main_job).pack(side=tk.LEFT)
-        tk.Button(tree_btn_frame, text="Add Subjob", command=self.add_subjob).pack(side=tk.LEFT, padx=4)
-        tk.Button(tree_btn_frame, text="Edit", command=self.edit_tree_item).pack(side=tk.LEFT, padx=4)
-        tk.Button(tree_btn_frame, text="Del", command=self.delete_tree_item).pack(side=tk.LEFT, padx=4)
 
-        # parem: details + preview
-        self.detail_frame = tk.Frame(main_pane, bd=2, relief=tk.GROOVE)
-        conds_top = tk.Frame(self.detail_frame)
+        tree_btn_frame = tk.Frame(self.tree_frame, bg="white")
+        tree_btn_frame.pack(fill=tk.X, padx=6, pady=6)
+        tk.Button(tree_btn_frame, text="Add Main Job", bg="#34a853", fg="white", relief=tk.FLAT, command=self.add_main_job).pack(side=tk.LEFT)
+        tk.Button(tree_btn_frame, text="Add Subjob", bg="#fbbc05", fg="white", relief=tk.FLAT, command=self.add_subjob).pack(side=tk.LEFT, padx=4)
+        tk.Button(tree_btn_frame, text="Edit", bg="#f37321", fg="white", relief=tk.FLAT, command=self.edit_tree_item).pack(side=tk.LEFT, padx=4)
+        tk.Button(tree_btn_frame, text="Delete", bg="#ea4335", fg="white", relief=tk.FLAT, command=self.delete_tree_item).pack(side=tk.LEFT, padx=4)
+
+        # Right: Details + Preview
+        self.detail_frame = tk.Frame(main_pane, bd=2, relief=tk.GROOVE, bg="white")
+        conds_top = tk.Frame(self.detail_frame, bg="white")
         conds_top.pack(fill=tk.X, padx=6, pady=6)
 
-        # Include
-        left_col = tk.Frame(conds_top)
-        left_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 6))
-        tk.Label(left_col, text="Include sõnad").pack(anchor="w")
+        # Include & Exclude
+        left_col = tk.Frame(conds_top, bg="white")
+        left_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0,6))
+        tk.Label(left_col, text="Include words", bg="white").pack(anchor="w")
         self.list_include = tk.Listbox(left_col, height=6)
         self.list_include.pack(fill=tk.BOTH, expand=True)
-        btn_inc = tk.Frame(left_col)
+        btn_inc = tk.Frame(left_col, bg="white")
         btn_inc.pack(fill=tk.X, pady=4)
-        tk.Button(btn_inc, text="Add", command=lambda: self.add_condition("include")).pack(side=tk.LEFT)
-        tk.Button(btn_inc, text="Edit", command=lambda: self.edit_condition("include")).pack(side=tk.LEFT, padx=4)
-        tk.Button(btn_inc, text="Del", command=lambda: self.del_condition("include")).pack(side=tk.LEFT, padx=4)
+        tk.Button(btn_inc, text="Add", bg="#34a853", fg="white", relief=tk.FLAT, command=lambda: self.add_condition("include")).pack(side=tk.LEFT)
+        tk.Button(btn_inc, text="Edit", bg="#fbbc05", fg="white", relief=tk.FLAT, command=lambda: self.edit_condition("include")).pack(side=tk.LEFT, padx=4)
+        tk.Button(btn_inc, text="Del", bg="#ea4335", fg="white", relief=tk.FLAT, command=lambda: self.del_condition("include")).pack(side=tk.LEFT, padx=4)
 
-        # Exclude
-        right_col = tk.Frame(conds_top)
+        right_col = tk.Frame(conds_top, bg="white")
         right_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        tk.Label(right_col, text="Exclude sõnad").pack(anchor="w")
+        tk.Label(right_col, text="Exclude words", bg="white").pack(anchor="w")
         self.list_exclude = tk.Listbox(right_col, height=6)
         self.list_exclude.pack(fill=tk.BOTH, expand=True)
-        btn_exc = tk.Frame(right_col)
+        btn_exc = tk.Frame(right_col, bg="white")
         btn_exc.pack(fill=tk.X, pady=4)
-        tk.Button(btn_exc, text="Add", command=lambda: self.add_condition("exclude")).pack(side=tk.LEFT)
-        tk.Button(btn_exc, text="Edit", command=lambda: self.edit_condition("exclude")).pack(side=tk.LEFT, padx=4)
-        tk.Button(btn_exc, text="Del", command=lambda: self.del_condition("exclude")).pack(side=tk.LEFT, padx=4)
+        tk.Button(btn_exc, text="Add", bg="#34a853", fg="white", relief=tk.FLAT, command=lambda: self.add_condition("exclude")).pack(side=tk.LEFT)
+        tk.Button(btn_exc, text="Edit", bg="#fbbc05", fg="white", relief=tk.FLAT, command=lambda: self.edit_condition("exclude")).pack(side=tk.LEFT, padx=4)
+        tk.Button(btn_exc, text="Del", bg="#ea4335", fg="white", relief=tk.FLAT, command=lambda: self.del_condition("exclude")).pack(side=tk.LEFT, padx=4)
 
         self.all_match_var = tk.BooleanVar(value=False)
-        self.chk_all_match = tk.Checkbutton(self.detail_frame, text="Kõik include sõnad peavad klappima", variable=self.all_match_var, command=self.toggle_all_must_match)
-        self.chk_all_match.pack(anchor="w", padx=8, pady=(0, 6))
+        tk.Checkbutton(self.detail_frame, text="All include words must match", variable=self.all_match_var, bg="white", command=self.toggle_all_must_match).pack(anchor="w", padx=8, pady=(0,6))
 
-        # preview canvas
-        self.canvas_label = tk.Label(self.detail_frame, text="PDF Header Preview")
+        # Preview canvas
+        self.canvas_label = tk.Label(self.detail_frame, text="PDF Header Preview", bg="white")
         self.canvas_label.pack(anchor="w", padx=8)
-        self.canvas = tk.Canvas(self.detail_frame, bg="lightgray", height=220)
-        self.canvas.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0, 6))
+        self.canvas = tk.Canvas(self.detail_frame, bg="#e8eaf6", height=250)
+        self.canvas.pack(fill=tk.BOTH, expand=True, padx=8, pady=(0,6))
 
-        nav_frame = tk.Frame(self.detail_frame)
-        nav_frame.pack(fill=tk.X, padx=8, pady=(0, 8))
-        tk.Button(nav_frame, text="Prev Page", command=lambda: self.show_preview(-1)).pack(side=tk.LEFT)
-        tk.Button(nav_frame, text="Next Page", command=lambda: self.show_preview(1)).pack(side=tk.LEFT, padx=6)
-        tk.Button(nav_frame, text="Start Split", command=self.start_split).pack(side=tk.RIGHT)
-        self.page_label = tk.Label(nav_frame, text="Leht: 0/0")
+        nav_frame = tk.Frame(self.detail_frame, bg="white")
+        nav_frame.pack(fill=tk.X, padx=8, pady=(0,8))
+        tk.Button(nav_frame, text="Prev Page", bg="#4a90e2", fg="white", relief=tk.FLAT, command=lambda: self.show_preview(-1)).pack(side=tk.LEFT)
+        tk.Button(nav_frame, text="Next Page", bg="#4a90e2", fg="white", relief=tk.FLAT, command=lambda: self.show_preview(1)).pack(side=tk.LEFT, padx=6)
+        tk.Button(nav_frame, text="Start Split", bg="#0f9d58", fg="white", relief=tk.FLAT, command=self.start_split).pack(side=tk.RIGHT)
+        self.page_label = tk.Label(nav_frame, text="Page: 0/0", bg="white")
         self.page_label.pack(side=tk.LEFT, padx=8)
 
         main_pane.add(self.tree_frame, weight=1)
         main_pane.add(self.detail_frame, weight=3)
 
-        self.refresh_tree()
+        # Version label
+        self.version_label = tk.Label(self.root, text=f"Version: {__version__}", bg="#f7f9fc", font=("Arial", 10, "italic"))
+        self.version_label.pack(anchor="se", side=tk.BOTTOM, padx=10, pady=4)
 
-        # Versioon label all paremal
-        self.version_label = tk.Label(root, text=f"Versioon: {__version__}")
-        self.version_label.pack(anchor="se", side=tk.BOTTOM, padx=6, pady=4)
-
-        # Kontrolli uuendusi taustal
         threading.Thread(target=self.check_for_update_background, daemon=True).start()
+
+
 
     # ---------------- Versioon & Uuendus ----------------
     def check_for_update_background(self):
@@ -701,7 +702,8 @@ class PDFSplitterApp:
             else:
                 messagebox.showwarning("Tulemus", "Ühtegi faili ei loodud (pole ühtegi matching rule'i või lehti).")
 
+# ---------------------------- RUN ----------------------------
 if __name__ == "__main__":
     root = tk.Tk()
-    app = PDFSplitterApp(root)
+    app = ModernPDFSplitter(root)
     root.mainloop()
