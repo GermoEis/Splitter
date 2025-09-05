@@ -205,7 +205,7 @@ class ModernPDFSplitter:
 
         self.setup_ui()
         self.refresh_tree()
-  #      threading.Thread(target=self.check_for_update_background, daemon=True).start()
+        threading.Thread(target=self.check_for_update_background, daemon=True).start()
 
     def setup_ui(self):
         style = ttk.Style(self.root)
@@ -295,7 +295,7 @@ class ModernPDFSplitter:
         self.version_label = tk.Label(self.root, text=f"Version: {__version__}", bg="#f7f9fc", font=("Arial", 10, "italic"))
         self.version_label.pack(anchor="se", side=tk.BOTTOM, padx=10, pady=4)
 
-        threading.Thread(target=self.check_for_update_background, daemon=True).start()
+    #    threading.Thread(target=self.check_for_update_background, daemon=True).start()
 
 
 
