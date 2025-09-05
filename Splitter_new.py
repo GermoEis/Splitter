@@ -325,6 +325,7 @@ class PDFSplitterApp:
 
     def download_and_replace(self, download_url):
         try:
+            # Lae alla skript
             r = requests.get(download_url, timeout=10)
             r.raise_for_status()
             script_path = os.path.realpath(sys.argv[0])
@@ -332,14 +333,18 @@ class PDFSplitterApp:
             shutil.copyfile(script_path, backup_path)
             with open(script_path, "wb") as f:
                 f.write(r.content)
-            
-            # uuenda jooksvalt versiooni UI-s
+
+            # Uuenda jooksvalt versiooni UI-s
             data = requests.get(GITHUB_VERSION_JSON, timeout=5).json()
             new_version = data.get("version", "0.0.0")
             global __version__
             __version__ = new_version
             self.version_label.config(text=f"Versioon: {__version__}")
-            
+
+            # ❌ Uus osa: salvesta kohalik version.json
+            with open(VERSION_FILE, "w", encoding="utf-8") as vf:
+                json.dump({"version": __version__}, vf, indent=2, ensure_ascii=False)
+
             messagebox.showinfo(
                 "Uuendus tehtud",
                 f"Rakendus on uuendatud.\nBackup tehtud: {backup_path}\nTaaskäivita rakendus."
@@ -349,10 +354,17 @@ class PDFSplitterApp:
 
 
     def version_compare(self, latest, current):
-        """True, kui uus versioon olemas"""
         def parse(v):
-            return [int(x) for x in v.split(".")]
+            parts = v.split(".")
+            nums = []
+            for p in parts:
+                try:
+                    nums.append(int(p))
+                except ValueError:
+                    nums.append(0)
+            return nums
         return parse(latest) > parse(current)
+
 
     # ---------------- Jobs / Conditions ----------------
     def refresh_tree(self):
