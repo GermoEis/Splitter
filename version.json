@@ -1,6 +1,6 @@
 {
 
-  "version": "2.0.0",
+  "version": "1.5.0",
   "release_notes": "Esimene release: PDF Splitter EasyOCR rakendus koos UI ja versioonikontrolliga",
   "download_url": "https://raw.githubusercontent.com/GermoEis/Splitter/main/Splitter_new.py"
 }
