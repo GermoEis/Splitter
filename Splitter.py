@@ -106,16 +106,34 @@ def split_pdfs(pdf_paths, conds_dict, output_dir, progress_callback=None):
         doc = fitz.open(pdf_path)
         total_pages = doc.page_count
 
-        # Leia fallback subjob (subjob ilma reegliteta)
         fallback_sj = None
         for sj, conds in conds_dict.items():
             if not conds.get("include") and not conds.get("exclude"):
                 fallback_sj = sj
-                break  # eeldame, et ainult üks fallback
+                break
 
         current_sj = None
         current_batch = []
         current_keywords = None
+
+        def save_batch(batch_sj, batch_pages, keywords):
+            if not batch_pages:
+                return
+            safe_sj = re.sub(r'[<>:"/\\|?*]+', "_", batch_sj or "unknown_job")
+            sj_dir = os.path.join(output_dir, safe_sj)
+            os.makedirs(sj_dir, exist_ok=True)
+            base_name = os.path.splitext(os.path.basename(pdf_path))[0]
+            safe_base_name = re.sub(r'[<>:"/\\|?* ]+', "_", base_name)
+            if len(batch_pages) == 1:
+                out_path = os.path.join(sj_dir, f"{safe_base_name}_page_{batch_pages[0]+1}.pdf")
+            else:
+                out_path = os.path.join(sj_dir, f"{safe_base_name}_pages_{batch_pages[0]+1}_{batch_pages[-1]+1}.pdf")
+            writer = fitz.open()
+            for p in batch_pages:
+                writer.insert_pdf(doc, from_page=p, to_page=p)
+            writer.save(out_path)
+            writer.close()
+            results.setdefault(batch_sj, []).append({"path": out_path, "found_keywords": keywords})
 
         for i in range(total_pages):
             page = doc[i]
@@ -123,10 +141,10 @@ def split_pdfs(pdf_paths, conds_dict, output_dir, progress_callback=None):
             if not text.strip():
                 text = extract_text_with_ocr(page)
 
-            new_sj = None
-            new_keywords = None
+            matched_sj = None
+            matched_keywords = None
 
-            # Kontrolli kõiki subjob’e reeglitega
+            # kontrollime kõiki reegleid
             for sj, conds in conds_dict.items():
                 inc = conds.get("include", [])
                 exc = conds.get("exclude", [])
@@ -136,43 +154,35 @@ def split_pdfs(pdf_paths, conds_dict, output_dir, progress_callback=None):
                     inc_ok = check_include(text, inc, all_must_match)
                     exc_ok = not any((word.casefold() in text.casefold()) for word in exc) if exc else True
                     if inc_ok and exc_ok:
-                        new_sj = sj
+                        matched_sj = sj
                         found_inc = []
                         for entry in inc:
-                            if isinstance(entry, str):
-                                if entry.casefold() in text.casefold():
-                                    found_inc.append(entry)
+                            if isinstance(entry, str) and entry.casefold() in text.casefold():
+                                found_inc.append(entry)
                             elif isinstance(entry, list):
                                 hits = [w for w in entry if w.casefold() in text.casefold()]
                                 if hits:
                                     found_inc.append(hits)
-                        new_keywords = {
+                        matched_keywords = {
                             "include": found_inc,
                             "exclude": [word for word in exc if word.casefold() in text.casefold()],
                         }
                         break
 
-            # Kui ükski reeglitega subjob ei sobi → fallback
-            if new_sj is None:
-                if fallback_sj:
-                    new_sj = fallback_sj
-                    new_keywords = {"include": [], "exclude": []}
-                else:
-                    continue  # skip page
+            if matched_sj:  
+                # Kui uus reegel aktiveerus → salvesta eelmine batch ja alusta uut
+                if current_batch:
+                    save_batch(current_sj, current_batch, current_keywords)
+                    current_batch = []
+                current_sj = matched_sj
+                current_keywords = matched_keywords
+            elif current_sj is None:  
+                # kui mitte midagi pole veel alustatud
+                current_sj = fallback_sj
+                current_keywords = None
 
-            # Salvestame iga lehe **koheselt ühe PDF-ina**
-            safe_sj = re.sub(r'[<>:"/\\|?*]+', "_", new_sj or "unknown_job")
-            sj_dir = os.path.join(output_dir, safe_sj)
-            os.makedirs(sj_dir, exist_ok=True)
-            base_name = os.path.splitext(os.path.basename(pdf_path))[0]
-            safe_base_name = re.sub(r'[<>:"/\\|?* ]+', "_", base_name)
-            out_path = os.path.join(sj_dir, f"{safe_base_name}_page_{i+1}.pdf")
-
-            writer = fitz.open()
-            writer.insert_pdf(doc, from_page=i, to_page=i)
-            writer.save(out_path)
-            writer.close()
-            results.setdefault(new_sj, []).append({"path": out_path, "found_keywords": new_keywords})
+            # Lisa leht jooksvale batchile
+            current_batch.append(i)
 
             if progress_callback:
                 try:
@@ -180,26 +190,17 @@ def split_pdfs(pdf_paths, conds_dict, output_dir, progress_callback=None):
                 except Exception:
                     pass
 
-
-        # Salvesta viimane batch
+        # Lõpus salvesta viimased lehed
         if current_sj and current_batch:
-            safe_sj = re.sub(r'[<>:"/\\|?*]+', "_", current_sj or "unknown_job")
-            sj_dir = os.path.join(output_dir, safe_sj)
-            os.makedirs(sj_dir, exist_ok=True)
-            base_name = os.path.splitext(os.path.basename(pdf_path))[0]
-            safe_base_name = re.sub(r'[<>:"/\\|?* ]+', "_", base_name)
-            out_path = os.path.join(sj_dir, f"{safe_base_name}_pages_{current_batch[0]+1}_{current_batch[-1]+1}.pdf")
-            writer = fitz.open()
-            for page_idx in current_batch:
-                writer.insert_pdf(doc, from_page=page_idx, to_page=page_idx)
-            writer.save(out_path)
-            writer.close()
-            results.setdefault(current_sj, []).append({"path": out_path, "found_keywords": current_keywords})
+            save_batch(current_sj, current_batch, current_keywords)
 
         doc.close()
         all_results[os.path.basename(pdf_path)] = results
 
     return all_results
+
+
+
 
 # ---------------------------- MODERN UI ----------------------------
 class ModernPDFSplitter:
