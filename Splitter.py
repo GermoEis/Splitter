@@ -13,6 +13,7 @@ import easyocr
 from datetime import datetime
 import shutil
 import requests
+import subprocess
 
 # ---------------------------- VERSION ----------------------------
 VERSION_FILE = "version.json"
@@ -408,52 +409,54 @@ class ModernPDFSplitter:
         except Exception:
             pass
 
-    def prompt_update(self, latest_version, download_url=None):
-        if download_url is None:
-            return
-        if messagebox.askyesno(
-            "Uus versioon saadaval",
-            f"Saadaval on uus versioon {latest_version}.\nUuendada jooksvalt rakenduse skript?"
-        ):
-            self.download_and_replace(download_url)
+    # def prompt_update(self, latest_version, download_url=None):
+    #     if download_url is None:
+    #         return
+    #     if messagebox.askyesno(
+    #         "Uus versioon saadaval",
+    #         f"Saadaval on uus versioon {latest_version}.\nUuendada rakendus ja taaskäivitada?"
+    #     ):
+    #         self.download_and_restart(download_url)
 
-    def download_and_replace(self, download_url):
-        try:
-            r = requests.get(download_url, timeout=10)
-            r.raise_for_status()
-            script_path = os.path.realpath(sys.argv[0])
-            backup_path = script_path + ".bak"
-            shutil.copyfile(script_path, backup_path)
-            with open(script_path, "wb") as f:
-                f.write(r.content)
+    # def download_and_restart(self, download_url):
+    #     try:
+    #         # Lae uus skript
+    #         r = requests.get(download_url, timeout=10)
+    #         r.raise_for_status()
+    #         script_path = os.path.realpath(sys.argv[0])
+    #         backup_path = script_path + ".bak"
+    #         shutil.copyfile(script_path, backup_path)
 
-            data = requests.get(GITHUB_VERSION_JSON, timeout=5).json()
-            new_version = data.get("version", "0.0.0")
-            global __version__
-            __version__ = new_version
-            self.version_label.config(text=f"Versioon: {__version__}")
+    #         with open(script_path, "wb") as f:
+    #             f.write(r.content)
 
-            with open(VERSION_FILE, "w", encoding="utf-8") as vf:
-                json.dump({"version": __version__}, vf, indent=2, ensure_ascii=False)
+    #         # uuenda versioonifail
+    #         data = requests.get(GITHUB_VERSION_JSON, timeout=5).json()
+    #         new_version = data.get("version", "0.0.0")
+    #         global __version__
+    #         __version__ = new_version
+    #         self.version_label.config(text=f"Versioon: {__version__}")
+    #         with open(VERSION_FILE, "w", encoding="utf-8") as vf:
+    #             json.dump({"version": __version__}, vf, indent=2, ensure_ascii=False)
 
-            messagebox.showinfo(
-                "Uuendus tehtud",
-                f"Rakendus on uuendatud.\nBackup tehtud: {backup_path}\nTaaskäivita rakendus."
-            )
-        except Exception as e:
-            messagebox.showerror("Viga", f"Uuenduse allalaadimine ebaõnnestus: {e}")
+    #         # Käivita uus protsess
+    #         subprocess.Popen([sys.executable, script_path])
+    #         self.root.destroy()  # sulge vana GUI
+    #     except Exception as e:
+    #         messagebox.showerror("Viga", f"Uuenduse allalaadimine ebaõnnestus: {e}")
 
-    def version_compare(self, latest, current):
-        def parse(v):
-            parts = v.split(".")
-            nums = []
-            for p in parts:
-                try:
-                    nums.append(int(p))
-                except ValueError:
-                    nums.append(0)
-            return nums
-        return parse(latest) > parse(current)
+
+    # def version_compare(self, latest, current):
+    #     def parse(v):
+    #         parts = v.split(".")
+    #         nums = []
+    #         for p in parts:
+    #             try:
+    #                 nums.append(int(p))
+    #             except ValueError:
+    #                 nums.append(0)
+    #         return nums
+    #     return parse(latest) > parse(current)
 
     # ---------------- Jobs / Conditions ----------------
     def refresh_tree(self):
